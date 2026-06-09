@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # LinkedIn landscape (1.91:1) renders cleanly in-feed.
 WIDTH, HEIGHT = 1200, 627
+CARD_STYLE_VERSION = "minimal_v1"
 BG = (22, 20, 18)        # warm lacquer black
 FG = (247, 242, 232)     # warm white
 ACCENT = (184, 149, 82)  # restrained kinpaku gold
@@ -200,5 +201,5 @@ def bar_chart(
 
 def make_card_for_draft(card_text: str, out_dir: str | Path, draft_id: int) -> str:
     """Default enrichment: turn the approved image text into a text card."""
-    out_path = Path(out_dir) / f"draft_{draft_id}.png"
+    out_path = Path(out_dir) / f"draft_{draft_id}_{CARD_STYLE_VERSION}.png"
     return text_card(card_text, out_path)
