@@ -1,0 +1,30 @@
+# Secrets — never commit
+.env
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# OS
+.DS_Store
+
+# Local editor / tooling
+.claude/settings.local.json
+
+# Raw credential drop (plaintext secret) — never commit
+app_auth/
+
+# Raw API key drop (plaintext) — never commit
+api_key/
+
+# Generated post images
+generated_images/
