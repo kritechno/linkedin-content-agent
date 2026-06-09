@@ -46,8 +46,9 @@ def test_render_review_text(settings, story, monkeypatch):
     text = pipeline.render_review_text(rec)
     assert story.title in text
     assert "angle:" in text
-    assert "Image card text proposal" in text
+    assert "Image card text to approve" in text
     assert "Create image" in text
+    assert "Change image text" in text
 
 
 def test_cycle_angle_wraps(settings, story, monkeypatch):
@@ -89,6 +90,23 @@ def test_image_generation_waits_for_effective_text(settings, story, monkeypatch)
     assert seen["card_text"] == "My approved image headline."
 
 
+def test_image_text_override_is_image_only(settings, story, monkeypatch):
+    monkeypatch.setattr(pipeline, "get_top_topics", lambda **kw: [story])
+    monkeypatch.setattr(
+        "linkedin_agent.draft.writer.fetch_article_excerpt", lambda *a, **k: None
+    )
+    result = pipeline.run_cycle(settings=settings, force_mock=True, topics_limit=1)
+    rec = store.get_draft(settings, result.draft_ids[0])
+    original_post_text = rec.effective_text
+
+    store.set_image_text(settings, rec.id, "Shorter image-only headline")
+    rec = store.get_draft(settings, rec.id)
+
+    assert rec.effective_text == original_post_text
+    assert pipeline.image_card_text(rec) == "Shorter image-only headline"
+    assert "custom image-only text" in pipeline.render_review_text(rec)
+
+
 def test_linkedin_post_bodies():
     text_body = client.build_text_post_body("urn:li:person:abc", "hello")
     assert text_body["author"] == "urn:li:person:abc"
@@ -106,8 +124,10 @@ def test_bot_keyboard_callback_data():
     labels = [btn.text for row in kb.inline_keyboard for btn in row]
     assert "approve:7" in datas
     assert "image:7" in datas
+    assert "image_text:7" in datas
     assert "skip:7" in datas
     assert "🖼 Create image" in labels
+    assert "📝 Change image text" in labels
     assert "🖼 Regenerate image" in [
         btn.text for row in bot.keyboard(7, has_image=True).inline_keyboard for btn in row
     ]

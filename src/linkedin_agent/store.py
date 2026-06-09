@@ -49,6 +49,7 @@ class DraftRecord:
     current_idx: int
     override_text: str | None
     image_path: str | None
+    image_text: str | None
     status: str
     telegram_message_id: int | None
     post_urn: str | None
@@ -81,6 +82,7 @@ def _row_to_record(row) -> DraftRecord:
         current_idx=row["current_idx"],
         override_text=row["override_text"],
         image_path=row["image_path"],
+        image_text=row["image_text"],
         status=row["status"],
         telegram_message_id=row["telegram_message_id"],
         post_urn=row["post_urn"],
@@ -123,19 +125,38 @@ def set_message_id(settings: Settings, draft_id: int, message_id: int) -> None:
 
 
 def set_current_idx(settings: Settings, draft_id: int, idx: int) -> None:
-    _update(settings, draft_id, current_idx=idx, override_text=None, image_path=None)
+    _update(
+        settings,
+        draft_id,
+        current_idx=idx,
+        override_text=None,
+        image_path=None,
+        image_text=None,
+    )
 
 
 def set_override_text(settings: Settings, draft_id: int, text: str) -> None:
-    _update(settings, draft_id, override_text=text, image_path=None)
+    _update(settings, draft_id, override_text=text, image_path=None, image_text=None)
 
 
 def set_angles_json(settings: Settings, draft_id: int, angles_json: str) -> None:
-    _update(settings, draft_id, angles_json=angles_json, override_text=None, image_path=None)
+    _update(
+        settings,
+        draft_id,
+        angles_json=angles_json,
+        override_text=None,
+        image_path=None,
+        image_text=None,
+    )
 
 
 def set_image(settings: Settings, draft_id: int, image_path: str | None) -> None:
     _update(settings, draft_id, image_path=image_path)
+
+
+def set_image_text(settings: Settings, draft_id: int, text: str) -> None:
+    """Set image-only text and clear any rendered image that used old text."""
+    _update(settings, draft_id, image_text=text.strip(), image_path=None)
 
 
 # ── post log ──────────────────────────────────────────────────────────────

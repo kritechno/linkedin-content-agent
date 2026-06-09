@@ -78,9 +78,10 @@ uv run linkedin-agent bot              # then run the bot; /run to draft on dema
 ```
 
 In Telegram each draft shows the proposed text that would be burned into the
-image card. Use **Create image** only after that text is final; if it needs a
-change, edit the draft first. Buttons: **Approve & post · Edit · Regenerate ·
-Other angle · Create/Regenerate image · Skip**. Approve posts it to LinkedIn.
+image card. Use **Create image** only after that text is final; use
+**Change image text** to edit only the card headline without changing the
+LinkedIn post. Buttons: **Approve & post · Edit · Regenerate · Other angle ·
+Create/Regenerate image · Change image text · Skip**. Approve posts it to LinkedIn.
 The bot also runs itself on `POST_DAYS` at `POST_HOUR` and caps at
 `MAX_POSTS_PER_WEEK`; seen topics don't resurface for `TOPIC_MEMORY_DAYS`.
 

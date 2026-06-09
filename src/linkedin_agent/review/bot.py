@@ -39,7 +39,8 @@ def keyboard(draft_id: int, *, has_image: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [b("✅ Approve & post", "approve"), b("✏️ Edit", "edit")],
         [b("🔄 Regenerate", "regen"), b("🎭 Other angle", "angle")],
-        [b(image_label, "image"), b("❌ Skip", "skip")],
+        [b(image_label, "image"), b("📝 Change image text", "image_text")],
+        [b("❌ Skip", "skip")],
     ])
 
 
@@ -130,6 +131,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
     elif action == "edit":
+        context.user_data.pop("awaiting_image_text", None)
         context.user_data["awaiting_edit"] = draft_id
         await query.message.reply_text("✏️ Send the edited post text as a reply.")
 
@@ -161,12 +163,38 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         with open(path, "rb") as fh:
             await query.message.reply_photo(photo=fh, caption="🖼 Image generated")
 
+    elif action == "image_text":
+        context.user_data.pop("awaiting_edit", None)
+        context.user_data["awaiting_image_text"] = draft_id
+        await query.message.reply_text(
+            "Current image card text:\n\n"
+            f"{pipeline.image_card_text(record)}\n\n"
+            "Send the exact replacement text for the image card. "
+            "This changes only the image, not the LinkedIn post."
+        )
+
     elif action == "skip":
         store.set_status(settings, draft_id, "skipped")
         await query.edit_message_text(query.message.text + "\n\n❌ Skipped.")
 
 
 async def on_edit_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    image_draft_id = context.user_data.pop("awaiting_image_text", None)
+    if image_draft_id is not None:
+        settings = _settings(context)
+        store.set_image_text(settings, image_draft_id, update.message.text)
+        record = store.get_draft(settings, image_draft_id)
+        if record is None:
+            await update.message.reply_text("This draft is no longer available.")
+            return
+        await update.message.reply_text(
+            "Image text updated. Review it before creating the image:\n\n"
+            + pipeline.render_review_text(record),
+            reply_markup=keyboard(image_draft_id, has_image=bool(record.image_path)),
+            disable_web_page_preview=True,
+        )
+        return
+
     draft_id = context.user_data.pop("awaiting_edit", None)
     if draft_id is None:
         return  # not in an edit flow; ignore stray text

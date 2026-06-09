@@ -54,10 +54,15 @@ def test_cycle_angle_and_override(settings, story):
     rec = store.get_draft(settings, draft_id)
     assert rec.effective_text == "my hand-edited post"
 
-    # switching angle clears the override
+    store.set_image_text(settings, draft_id, "image-only headline")
+    rec = store.get_draft(settings, draft_id)
+    assert rec.image_text == "image-only headline"
+
+    # switching angle clears stale text/image overrides
     store.set_current_idx(settings, draft_id, 2)
     rec = store.get_draft(settings, draft_id)
     assert rec.override_text is None
+    assert rec.image_text is None
 
 
 def test_record_post_and_weekly_count(settings, story):

@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS drafts (
     current_idx         INTEGER NOT NULL DEFAULT 0,
     override_text       TEXT,                 -- set when the user edits manually
     image_path          TEXT,
+    image_text          TEXT,                 -- optional image-only text override
     status              TEXT NOT NULL DEFAULT 'pending',
     telegram_message_id INTEGER,
     post_urn            TEXT,
@@ -72,6 +73,12 @@ CREATE TABLE IF NOT EXISTS learned_voice (
 """
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, name: str, declaration: str) -> None:
+    cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if name not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+
+
 def get_connection(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -82,6 +89,7 @@ def get_connection(db_path: str) -> sqlite3.Connection:
 def init_db(db_path: str) -> None:
     with get_connection(db_path) as conn:
         conn.executescript(SCHEMA)
+        _ensure_column(conn, "drafts", "image_text", "TEXT")
 
 
 @contextmanager

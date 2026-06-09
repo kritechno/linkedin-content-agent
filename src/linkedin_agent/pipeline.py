@@ -27,9 +27,12 @@ class CycleResult:
 def image_card_text(record: store.DraftRecord) -> str:
     """Text proposed for the image card.
 
-    Use the first visible line of the effective post so manual edits naturally
-    change the card proposal before the PNG is rendered.
+    An explicit image-only edit wins. Otherwise use the first visible line of
+    the effective post so manual edits naturally change the card proposal before
+    the PNG is rendered.
     """
+    if record.image_text and record.image_text.strip():
+        return record.image_text.strip()
     for line in record.effective_text.splitlines():
         clean = line.strip()
         if clean:
@@ -85,13 +88,17 @@ def render_review_text(record: store.DraftRecord) -> str:
         "",
         record.effective_text,
         "",
-        "🖼 Image card text proposal:",
-        f'"{image_card_text(record)}"',
+        "🖼 Image card text to approve:",
+        image_card_text(record),
+    ]
+    if record.image_text:
+        lines.append("   (custom image-only text)")
+    lines.extend([
         "",
         f"🖼 Image: {'attached' if record.image_path else 'not generated yet'}",
-    ]
+    ])
     if not record.image_path:
-        lines.append('   Tap "Create image" only if the proposed card text is final.')
+        lines.append('   Is this image text OK? Tap "Create image", or "Change image text".')
     if record.override_text:
         lines.append("✏️ (your edited version)")
     if angle.fact_flags and not record.override_text:
