@@ -27,7 +27,20 @@ fi
 
 echo "Starting bot…  (press Ctrl+C, or close this window, to stop)"
 echo
-uv run linkedin-agent bot
+
+# Auto-restart on crashes (e.g. transient Telegram network timeouts) so the bot
+# self-heals. A clean Ctrl+C shutdown exits 0 and breaks the loop.
+trap 'echo; echo "Stopping."; exit 0' INT
+while true; do
+  uv run linkedin-agent bot
+  code=$?
+  if [ "$code" -eq 0 ]; then
+    break
+  fi
+  echo
+  echo "⚠️  Bot exited (code $code) — restarting in 5s.  Press Ctrl+C to stop."
+  sleep 5
+done
 
 echo
 echo "Bot stopped. Press any key to close…"
