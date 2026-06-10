@@ -49,6 +49,12 @@ def _merge(by_id: dict[str, Story], story: Story) -> None:
         existing.matched_queries |= story.matched_queries
 
 
+def _get_json(client: httpx.Client, params: dict) -> dict:
+    resp = client.get(SEARCH_URL, params=params)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def fetch_stories(
     queries: list[str],
     *,
@@ -71,26 +77,30 @@ def fetch_stories(
             filters = [f"created_at_i>{cutoff}"]
             if min_points_server > 0:
                 filters.append(f"points>={min_points_server}")
-            resp = client.get(SEARCH_URL, params={
-                "tags": "story",
-                "query": query,
-                "hitsPerPage": hits_per_page,
-                "numericFilters": ",".join(filters),
-            })
-            resp.raise_for_status()
-            for hit in resp.json().get("hits", []):
+            try:
+                data = _get_json(client, {
+                    "tags": "story",
+                    "query": query,
+                    "hitsPerPage": hits_per_page,
+                    "numericFilters": ",".join(filters),
+                })
+            except httpx.HTTPError:
+                continue
+            for hit in data.get("hits", []):
                 story = _parse_hit(hit, query)
                 if story is not None:
                     _merge(by_id, story)
 
         if include_front_page:
             # Current front page — high-traffic, widely-seen stories.
-            resp = client.get(SEARCH_URL, params={
-                "tags": "front_page",
-                "hitsPerPage": 50,
-            })
-            resp.raise_for_status()
-            for hit in resp.json().get("hits", []):
+            try:
+                data = _get_json(client, {
+                    "tags": "front_page",
+                    "hitsPerPage": 50,
+                })
+            except httpx.HTTPError:
+                data = {"hits": []}
+            for hit in data.get("hits", []):
                 story = _parse_hit(hit, "front_page")
                 if story is not None:
                     _merge(by_id, story)

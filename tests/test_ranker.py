@@ -8,9 +8,12 @@ from linkedin_agent.research.models import Story
 from linkedin_agent.research.ranker import (
     Weights,
     controversy_signal,
+    is_discussion_post,
     is_launch_post,
+    is_release_notes_story,
     rank,
     recency_decay,
+    source_quality_signal,
     topic_match,
 )
 from linkedin_agent.research.engine import (
@@ -142,6 +145,53 @@ def test_show_hn_is_demoted():
     ranked = rank([launch, news], focus_keywords=["ai"], strict_keywords=["ai"])
     assert ranked[0].object_id == "news"  # launch penalty pushes Show HN below
     assert is_launch_post("Show HN: foo") and not is_launch_post("OpenAI ships X")
+
+
+def test_release_announcement_beats_release_notes_artifact():
+    official = make_story(
+        object_id="official",
+        title="Anthropic releases Claude Fable 5",
+        url="https://www.anthropic.com/news/claude-fable-5",
+        points=180,
+        num_comments=50,
+    )
+    notes = make_story(
+        object_id="notes",
+        title="Claude Fable 5 release notes discussion",
+        url="https://docs.anthropic.com/en/release-notes/claude-fable-5",
+        points=190,
+        num_comments=55,
+    )
+    ranked = rank(
+        [notes, official],
+        focus_keywords=["claude", "anthropic"],
+        strict_keywords=[],
+    )
+
+    assert ranked[0].object_id == "official"
+    assert source_quality_signal(official) > source_quality_signal(notes)
+    assert is_release_notes_story(notes)
+
+
+def test_discussion_thread_is_demoted_below_primary_release():
+    ask = make_story(
+        object_id="ask",
+        title="Ask HN: What do you think about Claude Fable 5?",
+        url="https://news.ycombinator.com/item?id=1",
+        points=230,
+        num_comments=90,
+    )
+    release = make_story(
+        object_id="release",
+        title="Claude Fable 5",
+        url="https://www.anthropic.com/news/claude-fable-5",
+        points=210,
+        num_comments=70,
+    )
+    ranked = rank([ask, release], focus_keywords=["claude"], strict_keywords=[])
+
+    assert ranked[0].object_id == "release"
+    assert is_discussion_post(ask.title)
 
 
 def test_big_story_beats_fresh_tiny_one():

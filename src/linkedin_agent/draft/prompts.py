@@ -61,6 +61,9 @@ def build_system_prompt(
         "'hashtags' array — never inside 'hook' or 'body'.",
         "- Plain language. No corporate filler, no '🚀 game-changer' clichés, no em-dash-spam.",
         "- Ground the take in the actual story; don't claim the news as your own discovery.",
+        "- If the source is release notes, a changelog, docs, or a discussion thread, "
+        "write about the underlying product/model/news event. Do not write a "
+        "meta-post about the release-notes page or the thread itself.",
         "- FACT-CHECK YOURSELF: list any specific stat/quote/date you're unsure of in "
         "fact_flags so the human can verify. Hallucinated stats are the #1 credibility killer.",
     ]

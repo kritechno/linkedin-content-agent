@@ -4,8 +4,9 @@
             + w_comments    * norm(num_comments)         # how widely discussed
             + w_controversy * controversy(volume-gated)  # how much arguing
             + w_topic       * topic_match(focus areas)   # relevant to my niche
+            + w_source      * source_quality              # primary launch/news source
             + w_recency     * recency_decay(age_hours)    # freshness (tiebreaker)
-            ) * show_hn_penalty
+            ) * launch/discussion penalties
 
 Tuned for *big, widely-discussed, relatable* topics (LinkedIn presence), not
 fresh-but-obscure side projects. So popularity (points + comments) dominates,
@@ -18,6 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from linkedin_agent.research.models import Story
 
@@ -27,7 +29,35 @@ MIN_DEBATE_COMMENTS = 40
 
 # Project-launch / self-promo prefixes a LinkedIn audience rarely relates to.
 _LAUNCH_PREFIXES = ("show hn", "launch hn")
+_DISCUSSION_PREFIXES = ("ask hn", "tell hn")
 SHOW_HN_PENALTY = 0.6
+DISCUSSION_POST_PENALTY = 0.8
+RELEASE_NOTES_PENALTY = 0.65
+
+PRIMARY_SOURCE_DOMAINS = (
+    "anthropic.com",
+    "openai.com",
+    "mistral.ai",
+    "deepseek.com",
+    "ai.google.dev",
+    "blog.google",
+    "googleblog.com",
+    "deepmind.google",
+    "microsoft.com",
+    "nvidia.com",
+    "meta.com",
+    "ai.meta.com",
+    "huggingface.co",
+)
+
+RELEASE_TITLE_RE = re.compile(
+    r"\b(announc(?:e|es|ed|ing)|introduc(?:e|es|ed|ing)|launch(?:es|ed|ing)?|"
+    r"releas(?:e|es|ed|ing)|ship(?:s|ped|ping)?|unveil(?:s|ed|ing)?|"
+    r"new|model|version|v\d+|[a-z]+[- ]?\d+(?:\.\d+)?)\b",
+    re.IGNORECASE,
+)
+RELEASE_PATH_RE = re.compile(r"/(news|blog|research|announcements?)/", re.IGNORECASE)
+RELEASE_NOTES_RE = re.compile(r"(release[-_ ]?notes?|changelog|docs?/)", re.IGNORECASE)
 
 
 @lru_cache(maxsize=256)
@@ -39,13 +69,21 @@ def _word_pattern(keyword: str) -> re.Pattern[str]:
 @dataclass(frozen=True)
 class Weights:
     points: float = 0.30        # widely upvoted = widely seen
-    comments: float = 0.25      # widely discussed
-    controversy: float = 0.20   # actively argued (volume-gated)
-    topic: float = 0.15         # in my niche
-    recency: float = 0.10       # freshness, just a tiebreaker
+    comments: float = 0.22      # widely discussed
+    controversy: float = 0.15   # actively argued (volume-gated)
+    topic: float = 0.12         # in my niche
+    source: float = 0.13        # primary-source launch/news signals
+    recency: float = 0.08       # freshness, just a tiebreaker
 
     def total(self) -> float:
-        return self.points + self.comments + self.controversy + self.topic + self.recency
+        return (
+            self.points
+            + self.comments
+            + self.controversy
+            + self.topic
+            + self.source
+            + self.recency
+        )
 
 
 def recency_decay(age_hours: float, half_life_hours: float = 36.0) -> float:
@@ -71,6 +109,41 @@ def controversy_signal(story: Story) -> float:
 def is_launch_post(title: str) -> bool:
     low = title.strip().lower()
     return any(low.startswith(p) for p in _LAUNCH_PREFIXES)
+
+
+def is_discussion_post(title: str) -> bool:
+    low = title.strip().lower()
+    return any(low.startswith(p) for p in _DISCUSSION_PREFIXES)
+
+
+def is_release_notes_story(story: Story) -> bool:
+    haystack = f"{story.title} {story.url}"
+    return bool(RELEASE_NOTES_RE.search(haystack))
+
+
+def _host(url: str) -> str:
+    return (urlparse(url).hostname or "").lower().removeprefix("www.")
+
+
+def _host_matches(host: str, domains: tuple[str, ...]) -> bool:
+    return any(host == domain or host.endswith(f".{domain}") for domain in domains)
+
+
+def source_quality_signal(story: Story) -> float:
+    """Prefer the actual launch/news source over meta threads and release-note crumbs."""
+    host = _host(story.url)
+    score = 0.0
+    if _host_matches(host, PRIMARY_SOURCE_DOMAINS):
+        score += 0.55
+    if RELEASE_TITLE_RE.search(story.title):
+        score += 0.20
+    if RELEASE_PATH_RE.search(urlparse(story.url).path or ""):
+        score += 0.25
+    if is_release_notes_story(story):
+        score -= 0.35
+    if is_discussion_post(story.title) or host == "news.ycombinator.com":
+        score -= 0.20
+    return max(0.0, min(score, 1.0))
 
 
 def topic_match(
@@ -116,6 +189,7 @@ def rank(
         r_comments = _norm_by_max(s.num_comments, max_comments)
         r_contro = _norm_by_max(controversy_signal(s), max_contro)
         r_topic, matched = topic_match(s.title, focus_keywords, strict_keywords)
+        r_source = source_quality_signal(s)
         r_recency = recency_decay(s.age_hours)
 
         breakdown = {
@@ -123,11 +197,16 @@ def rank(
             "comments": weights.comments * r_comments,
             "controversy": weights.controversy * r_contro,
             "topic": weights.topic * r_topic,
+            "source": weights.source * r_source,
             "recency": weights.recency * r_recency,
         }
         score = sum(breakdown.values())
         if is_launch_post(s.title):
             score *= SHOW_HN_PENALTY
+        if is_discussion_post(s.title):
+            score *= DISCUSSION_POST_PENALTY
+        if is_release_notes_story(s):
+            score *= RELEASE_NOTES_PENALTY
         s.score = score
         s.score_breakdown = breakdown
         s.matched_keywords = matched
