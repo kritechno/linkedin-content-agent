@@ -23,6 +23,9 @@ DEFAULT_QUERIES = [
     "Claude",
     "GPT",
     "AI engineering",
+    "AI startup",
+    "AI founder",
+    "AI productivity",
 ]
 
 # Focus keywords for the ranker's topic_match signal AND the relevance gate.
@@ -37,6 +40,9 @@ DEFAULT_FOCUS_KEYWORDS = [
     "open source model", "foundation model", "frontier model", "coding agent",
     "benchmark", "model", "transformer", "diffusion", "embedding",
     "machine learning", "neural net", "quantiz",
+    "software engineer", "developer", "founder", "entrepreneur", "startup",
+    "indie hacker", "builder", "productivity", "workflow", "shipping",
+    "production", "code review", "career", "hiring",
 ]
 
 # STRICT keywords matched on WORD BOUNDARIES (\bkw\b), so short/ambiguous tokens

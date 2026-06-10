@@ -5,13 +5,15 @@
             + w_controversy * controversy(volume-gated)  # how much arguing
             + w_topic       * topic_match(focus areas)   # relevant to my niche
             + w_source      * source_quality              # primary launch/news source
+            + w_evergreen   * evergreen_discussion        # durable practitioner debate
             + w_recency     * recency_decay(age_hours)    # freshness (tiebreaker)
             ) * launch/discussion penalties
 
 Tuned for *big, widely-discussed, relatable* topics (LinkedIn presence), not
 fresh-but-obscure side projects. So popularity (points + comments) dominates,
 controversy only counts when there's real comment volume behind it, recency is
-a light tiebreaker, and "Show HN / Launch HN" project launches are demoted.
+a light tiebreaker, launches are one useful lane, and durable engineering /
+founder discussions can compete with news when the debate has traction.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ _DISCUSSION_PREFIXES = ("ask hn", "tell hn")
 SHOW_HN_PENALTY = 0.6
 DISCUSSION_POST_PENALTY = 0.8
 RELEASE_NOTES_PENALTY = 0.65
+META_DISCUSSION_PENALTY = 0.82
 
 PRIMARY_SOURCE_DOMAINS = (
     "anthropic.com",
@@ -58,6 +61,32 @@ RELEASE_TITLE_RE = re.compile(
 )
 RELEASE_PATH_RE = re.compile(r"/(news|blog|research|announcements?)/", re.IGNORECASE)
 RELEASE_NOTES_RE = re.compile(r"(release[-_ ]?notes?|changelog|docs?/)", re.IGNORECASE)
+META_DISCUSSION_RE = re.compile(
+    r"\b(repl(?:y|ies) to comments?|comments? on my .+ post|discussion about|"
+    r"thread about|response to|follow[- ]?up to)\b",
+    re.IGNORECASE,
+)
+EVERGREEN_AUDIENCE_RE = re.compile(
+    r"\b(engineers?|developers?|programmers?|founders?|entrepreneurs?|startups?|"
+    r"solo founders?|indie hackers?|builders?|teams?|managers?|students?|"
+    r"juniors?|seniors?)\b",
+    re.IGNORECASE,
+)
+EVERGREEN_PRACTICE_RE = re.compile(
+    r"\b(vibe[- ]?coding|vibecoding|ai[- ]?engineering|coding agents?|"
+    r"agents? in production|prompt(?:ing)?|code review|debug(?:ging)?|"
+    r"shipping|production|workflow|productivity|hiring|jobs?|careers?|"
+    r"business|customers?|operations|sales|marketing|bootstrapp(?:ed|ing)?|"
+    r"pricing|costs?|trust|evals?|evaluation|benchmarks?|technical debt|"
+    r"architecture|maintenance|security|privacy)\b",
+    re.IGNORECASE,
+)
+EVERGREEN_FRAME_RE = re.compile(
+    r"\b(why|how|should|will|what|when|stop|replace|replac(?:e|ing)|"
+    r"kill|worth|hard|fails?|failure|trap|myth|problem|future|lessons?|"
+    r"mistakes?|trade[- ]?offs?|versus|overrated|underrated|better|worse)\b|vs\.?",
+    re.IGNORECASE,
+)
 
 
 @lru_cache(maxsize=256)
@@ -68,12 +97,13 @@ def _word_pattern(keyword: str) -> re.Pattern[str]:
 
 @dataclass(frozen=True)
 class Weights:
-    points: float = 0.30        # widely upvoted = widely seen
+    points: float = 0.28        # widely upvoted = widely seen
     comments: float = 0.22      # widely discussed
     controversy: float = 0.15   # actively argued (volume-gated)
     topic: float = 0.12         # in my niche
-    source: float = 0.13        # primary-source launch/news signals
-    recency: float = 0.08       # freshness, just a tiebreaker
+    source: float = 0.09        # primary-source launch/news signals
+    evergreen: float = 0.09     # recurring AI/engineering/founder debates
+    recency: float = 0.05       # freshness, just a tiebreaker
 
     def total(self) -> float:
         return (
@@ -82,6 +112,7 @@ class Weights:
             + self.controversy
             + self.topic
             + self.source
+            + self.evergreen
             + self.recency
         )
 
@@ -121,6 +152,10 @@ def is_release_notes_story(story: Story) -> bool:
     return bool(RELEASE_NOTES_RE.search(haystack))
 
 
+def is_meta_discussion_story(story: Story) -> bool:
+    return bool(META_DISCUSSION_RE.search(story.title))
+
+
 def _host(url: str) -> str:
     return (urlparse(url).hostname or "").lower().removeprefix("www.")
 
@@ -143,6 +178,31 @@ def source_quality_signal(story: Story) -> float:
         score -= 0.35
     if is_discussion_post(story.title) or host == "news.ycombinator.com":
         score -= 0.20
+    return max(0.0, min(score, 1.0))
+
+
+def evergreen_discussion_signal(story: Story) -> float:
+    """Score durable AI/engineering/founder debates, not only launch news.
+
+    This intentionally looks at the title only. It is a lightweight lane signal
+    for "people like us are arguing about this" topics: vibe coding, AI agents
+    in real workflows, developer careers, shipping, startup operations, etc.
+    """
+    title = story.title
+    host = _host(story.url)
+    score = 0.0
+    if EVERGREEN_AUDIENCE_RE.search(title):
+        score += 0.30
+    if EVERGREEN_PRACTICE_RE.search(title):
+        score += 0.35
+    if EVERGREEN_FRAME_RE.search(title):
+        score += 0.25
+    if is_discussion_post(title) or host == "news.ycombinator.com":
+        score += 0.10
+    if is_release_notes_story(story):
+        score -= 0.35
+    if is_meta_discussion_story(story):
+        score -= 0.15
     return max(0.0, min(score, 1.0))
 
 
@@ -190,6 +250,7 @@ def rank(
         r_contro = _norm_by_max(controversy_signal(s), max_contro)
         r_topic, matched = topic_match(s.title, focus_keywords, strict_keywords)
         r_source = source_quality_signal(s)
+        r_evergreen = evergreen_discussion_signal(s)
         r_recency = recency_decay(s.age_hours)
 
         breakdown = {
@@ -198,15 +259,18 @@ def rank(
             "controversy": weights.controversy * r_contro,
             "topic": weights.topic * r_topic,
             "source": weights.source * r_source,
+            "evergreen": weights.evergreen * r_evergreen,
             "recency": weights.recency * r_recency,
         }
         score = sum(breakdown.values())
         if is_launch_post(s.title):
             score *= SHOW_HN_PENALTY
-        if is_discussion_post(s.title):
+        if is_discussion_post(s.title) and r_evergreen < 0.45:
             score *= DISCUSSION_POST_PENALTY
         if is_release_notes_story(s):
             score *= RELEASE_NOTES_PENALTY
+        if is_meta_discussion_story(s):
+            score *= META_DISCUSSION_PENALTY
         s.score = score
         s.score_breakdown = breakdown
         s.matched_keywords = matched

@@ -61,9 +61,12 @@ def build_system_prompt(
         "'hashtags' array — never inside 'hook' or 'body'.",
         "- Plain language. No corporate filler, no '🚀 game-changer' clichés, no em-dash-spam.",
         "- Ground the take in the actual story; don't claim the news as your own discovery.",
+        "- Not every post has to be breaking news. If the source is a recurring "
+        "AI/engineering/vibe-coding/founder debate, write about the durable "
+        "tension and use the story as the trigger.",
         "- If the source is release notes, a changelog, docs, or a discussion thread, "
-        "write about the underlying product/model/news event. Do not write a "
-        "meta-post about the release-notes page or the thread itself.",
+        "write about the underlying product/model/news event or practitioner debate. "
+        "Do not write a meta-post about the release-notes page or the thread itself.",
         "- FACT-CHECK YOURSELF: list any specific stat/quote/date you're unsure of in "
         "fact_flags so the human can verify. Hallucinated stats are the #1 credibility killer.",
     ]
@@ -107,7 +110,8 @@ def build_user_prompt(
 ) -> str:
     briefs = "\n".join(f"- {ANGLE_BRIEF[a]}" for a in angle_types)
     parts = [
-        "Write LinkedIn post drafts about this trending topic.",
+        "Write LinkedIn post drafts about this topic. It may be a launch/news item "
+        "or a recurring practitioner debate.",
         "",
         f"TOPIC: {title}",
         f"WHY IT'S HOT: {why_hot}",

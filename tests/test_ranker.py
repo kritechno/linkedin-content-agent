@@ -8,6 +8,7 @@ from linkedin_agent.research.models import Story
 from linkedin_agent.research.ranker import (
     Weights,
     controversy_signal,
+    evergreen_discussion_signal,
     is_discussion_post,
     is_launch_post,
     is_release_notes_story,
@@ -192,6 +193,56 @@ def test_discussion_thread_is_demoted_below_primary_release():
 
     assert ranked[0].object_id == "release"
     assert is_discussion_post(ask.title)
+
+
+def test_evergreen_practitioner_discussion_can_beat_routine_launch():
+    debate = make_story(
+        object_id="debate",
+        title="Ask HN: Are AI coding agents making junior engineers worse?",
+        url="https://news.ycombinator.com/item?id=2",
+        points=190,
+        num_comments=160,
+    )
+    launch = make_story(
+        object_id="launch",
+        title="OpenAI releases a new AI model",
+        url="https://openai.com/news/new-ai-model",
+        points=200,
+        num_comments=70,
+    )
+    ranked = rank(
+        [launch, debate],
+        focus_keywords=["coding agent", "engineer", "model"],
+        strict_keywords=["ai"],
+    )
+
+    assert ranked[0].object_id == "debate"
+    assert evergreen_discussion_signal(debate) > evergreen_discussion_signal(launch)
+    assert debate.score_breakdown["evergreen"] > 0
+
+
+def test_meta_followup_is_demoted_below_original_debate():
+    original = make_story(
+        object_id="original",
+        title="LLMs are eroding my software engineering career and I don't know what to do",
+        url="https://example.com/llms-eroding-software-engineering-career",
+        points=200,
+        num_comments=180,
+    )
+    followup = make_story(
+        object_id="followup",
+        title='Replies to comments on my "LLMs are eroding my career" post',
+        url="https://example.com/replies-to-comments-on-my-llms-career-post",
+        points=220,
+        num_comments=240,
+    )
+    ranked = rank(
+        [followup, original],
+        focus_keywords=["software engineer", "career"],
+        strict_keywords=["llms"],
+    )
+
+    assert ranked[0].object_id == "original"
 
 
 def test_big_story_beats_fresh_tiny_one():

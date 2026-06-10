@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from linkedin_agent.draft.llm import MockProvider, get_provider
 from linkedin_agent.draft.models import AngleType, DraftAngle, DraftSet, FactFlag
-from linkedin_agent.draft import writer
+from linkedin_agent.draft import prompts, writer
 
 
 def test_mock_provider_returns_three_distinct_angles():
@@ -70,3 +70,17 @@ def test_parse_angles_tolerates_bad_input():
 def test_get_provider_falls_back_to_mock_without_key(settings):
     # settings has llm_provider="mock" → not has_llm → mock
     assert get_provider(settings).name == "mock"
+
+
+def test_prompts_allow_evergreen_practitioner_debates():
+    system = prompts.build_system_prompt("persona", [])
+    user = prompts.build_user_prompt(
+        title="Ask HN: Are AI coding agents making junior engineers worse?",
+        why_hot="widely discussed",
+        url="https://news.ycombinator.com/item?id=2",
+        discussion_url="https://news.ycombinator.com/item?id=2",
+        angle_types=[AngleType.PRACTICAL],
+    )
+
+    assert "Not every post has to be breaking news" in system
+    assert "recurring practitioner debate" in user
