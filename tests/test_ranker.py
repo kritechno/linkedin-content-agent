@@ -221,6 +221,48 @@ def test_evergreen_practitioner_discussion_can_beat_routine_launch():
     assert debate.score_breakdown["evergreen"] > 0
 
 
+def test_weights_sum_to_one_keeps_scores_bounded():
+    # Per-signal scores are 0..1, so weights summing to 1.0 keeps the final
+    # score in [0, 1] (asserted elsewhere). Guard against a rebalance that
+    # accidentally pushes the total over 1.0.
+    assert abs(Weights().total() - 1.0) < 1e-9
+
+
+def test_linkedin_career_theme_scores_evergreen():
+    # A career/work story with no AI keyword should still light up the
+    # evergreen lane — these are the topics that travel on LinkedIn.
+    story = make_story(
+        object_id="rto",
+        title="Why returning to the office is making senior engineers quit",
+        url="https://example.com/rto-engineers-quit",
+    )
+    assert evergreen_discussion_signal(story) > 0
+
+
+def test_career_debate_competes_with_routine_ai_launch():
+    layoffs = make_story(
+        object_id="layoffs",
+        title="Ask HN: How are engineers coping with the latest tech layoffs?",
+        url="https://news.ycombinator.com/item?id=9",
+        points=180,
+        num_comments=170,
+    )
+    launch = make_story(
+        object_id="launch",
+        title="OpenAI releases a new AI model",
+        url="https://openai.com/news/new-ai-model",
+        points=190,
+        num_comments=70,
+    )
+    ranked = rank(
+        [launch, layoffs],
+        focus_keywords=["engineer", "layoff", "model"],
+        strict_keywords=["ai"],
+    )
+    assert ranked[0].object_id == "layoffs"
+    assert layoffs.score_breakdown["evergreen"] > 0
+
+
 def test_meta_followup_is_demoted_below_original_debate():
     original = make_story(
         object_id="original",

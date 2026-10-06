@@ -92,3 +92,16 @@ def test_prompt_without_learned_signal_omits_sections():
     system = prompts.build_system_prompt("persona", ["a sample"])
     assert "PUBLISHED posts" not in system
     assert "How the author edits" not in system
+    assert "BEST-PERFORMING" not in system
+
+
+def test_top_performing_post_enters_system_prompt(settings, story):
+    record = _queue_draft(settings, story)
+    store.record_post(settings, record.id, "urn:1",
+                      "A memorable line about snow leopards on the Pamir Highway.")
+    store.record_metrics(settings, record.id, impressions=1000, reactions=50,
+                         comments=10, reposts=5)
+
+    system = writer._build_system(settings)
+    assert "BEST-PERFORMING" in system
+    assert "snow leopards" in system

@@ -180,3 +180,119 @@ def posts_in_last_days(settings: Settings, days: int = 7) -> int:
             "SELECT COUNT(*) AS n FROM post_log WHERE posted_at >= ?", (cutoff,)
         ).fetchone()
     return row["n"]
+
+
+# ── performance feedback loop ───────────────────────────────────────────────
+# Engagement weight: a repost is a stronger endorsement than a comment, which is
+# stronger than a reaction. Reach (impressions) is tracked but not scored — it
+# measures distribution, this scores how much the content actually resonated.
+_ENGAGEMENT_SQL = (
+    "(COALESCE(reactions, 0) + 2 * COALESCE(comments, 0) + 3 * COALESCE(reposts, 0))"
+)
+
+
+@dataclass
+class PostStat:
+    """A published post with whatever performance numbers we've recorded."""
+    post_id: int
+    draft_id: int | None
+    text: str
+    posted_at: int
+    impressions: int | None
+    reactions: int | None
+    comments: int | None
+    reposts: int | None
+    metrics_updated_at: int | None
+
+    @property
+    def has_metrics(self) -> bool:
+        return self.metrics_updated_at is not None
+
+    @property
+    def engagement_score(self) -> int:
+        return (self.reactions or 0) + 2 * (self.comments or 0) + 3 * (self.reposts or 0)
+
+
+def _row_to_poststat(row) -> PostStat:
+    return PostStat(
+        post_id=row["id"],
+        draft_id=row["draft_id"],
+        text=row["text"] or "",
+        posted_at=row["posted_at"],
+        impressions=row["impressions"],
+        reactions=row["reactions"],
+        comments=row["comments"],
+        reposts=row["reposts"],
+        metrics_updated_at=row["metrics_updated_at"],
+    )
+
+
+def record_metrics(
+    settings: Settings,
+    draft_id: int,
+    *,
+    impressions: int | None = None,
+    reactions: int | None = None,
+    comments: int | None = None,
+    reposts: int | None = None,
+) -> bool:
+    """Attach performance numbers to a published post (by its draft id).
+
+    Returns False if no published post matches that draft id. Only the metrics
+    you pass are written; omitted ones keep their previous value.
+    """
+    sets = {
+        "impressions": impressions,
+        "reactions": reactions,
+        "comments": comments,
+        "reposts": reposts,
+    }
+    sets = {k: v for k, v in sets.items() if v is not None}
+    sets["metrics_updated_at"] = int(time.time())
+    cols = ", ".join(f"{k} = ?" for k in sets)
+    with connect(settings.db_path) as conn:
+        cur = conn.execute(
+            f"UPDATE post_log SET {cols} WHERE draft_id = ?",
+            (*sets.values(), draft_id),
+        )
+        return cur.rowcount > 0
+
+
+def list_recent_posts(settings: Settings, limit: int = 10) -> list[PostStat]:
+    """Most recent published posts, newest first — for the /posts list."""
+    with connect(settings.db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM post_log ORDER BY posted_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [_row_to_poststat(r) for r in rows]
+
+
+def posts_needing_metrics(
+    settings: Settings, *, min_age_days: int = 3, max_age_days: int = 6
+) -> list[PostStat]:
+    """Published posts old enough to have engagement but with no numbers yet, in
+    a bounded age window so the nudge fires a few times then stops nagging."""
+    now = int(time.time())
+    lo = now - max_age_days * 86400
+    hi = now - min_age_days * 86400
+    with connect(settings.db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM post_log WHERE metrics_updated_at IS NULL "
+            "AND draft_id IS NOT NULL AND posted_at BETWEEN ? AND ? "
+            "ORDER BY posted_at DESC",
+            (lo, hi),
+        ).fetchall()
+    return [_row_to_poststat(r) for r in rows]
+
+
+def top_performing_posts(settings: Settings, limit: int = 3) -> list[str]:
+    """Texts of the highest-engagement published posts (metrics required),
+    best first — fed back into the draft prompt as 'what actually worked'."""
+    with connect(settings.db_path) as conn:
+        rows = conn.execute(
+            f"SELECT text FROM post_log "
+            f"WHERE metrics_updated_at IS NOT NULL AND {_ENGAGEMENT_SQL} > 0 "
+            f"ORDER BY {_ENGAGEMENT_SQL} DESC, posted_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [r["text"] for r in rows if (r["text"] or "").strip()]

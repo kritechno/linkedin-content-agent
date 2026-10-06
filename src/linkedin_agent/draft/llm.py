@@ -58,26 +58,53 @@ class AnthropicProvider:
         return _extract_json(text)
 
 
+def _is_next_gen(model: str) -> bool:
+    """GPT-5-class and o-series models reject the legacy ``max_tokens`` param
+    (they want ``max_completion_tokens``) — detect them by id prefix."""
+    m = model.lower()
+    return m.startswith(("gpt-5", "o1", "o3", "o4")) or m == "chat-latest"
+
+
+def _supports_reasoning_effort(model: str) -> bool:
+    """Reasoning models accept ``reasoning_effort``; the Instant "chat" variants
+    (``*chat-latest``) do not, so don't send it to them."""
+    m = model.lower()
+    if m == "chat-latest" or m.endswith("-chat-latest"):
+        return False
+    return _is_next_gen(model)
+
+
 class OpenAIProvider:
     name = "openai"
-    DEFAULT_MODEL = "gpt-4o"
+    # GPT-5.5 is OpenAI's current flagship (best quality for voiced writing +
+    # native structured-output support). Override per-deploy with LLM_MODEL.
+    DEFAULT_MODEL = "gpt-5.5"
 
     def __init__(self, settings: Settings):
         from openai import OpenAI
 
         self._client = OpenAI(api_key=settings.openai_api_key)
         self._model = settings.llm_model or self.DEFAULT_MODEL
+        self._reasoning_effort = (settings.openai_reasoning_effort or "").strip().lower()
 
     def complete_json(self, system: str, user: str) -> dict:
-        resp = self._client.chat.completions.create(
-            model=self._model,
-            max_tokens=2000,
-            response_format={"type": "json_object"},
-            messages=[
+        params: dict = {
+            "model": self._model,
+            "response_format": {"type": "json_object"},
+            "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-        )
+        }
+        if _is_next_gen(self._model):
+            # Reasoning tokens count against this budget, so leave headroom well
+            # beyond the ~250-word post itself.
+            params["max_completion_tokens"] = 6000
+            if self._reasoning_effort and _supports_reasoning_effort(self._model):
+                params["reasoning_effort"] = self._reasoning_effort
+        else:
+            params["max_tokens"] = 2000
+        resp = self._client.chat.completions.create(**params)
         return _extract_json(resp.choices[0].message.content or "")
 
 

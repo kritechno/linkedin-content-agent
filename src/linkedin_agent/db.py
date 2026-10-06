@@ -47,14 +47,21 @@ CREATE TABLE IF NOT EXISTS drafts (
     updated_at          INTEGER NOT NULL
 );
 
--- Append-only log of everything actually published.
+-- Append-only log of everything actually published. The metrics_* columns are
+-- filled in later (manually, via /perf in Telegram) to close the performance
+-- feedback loop: which posts actually landed → feed the winners back into drafts.
 CREATE TABLE IF NOT EXISTS post_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    draft_id    INTEGER,
-    post_urn    TEXT,
-    text        TEXT,
-    image_path  TEXT,
-    posted_at   INTEGER NOT NULL
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    draft_id           INTEGER,
+    post_urn           TEXT,
+    text               TEXT,
+    image_path         TEXT,
+    posted_at          INTEGER NOT NULL,
+    impressions        INTEGER,
+    reactions          INTEGER,
+    comments           INTEGER,
+    reposts            INTEGER,
+    metrics_updated_at INTEGER          -- when performance numbers were last set
 );
 
 -- Voice-learning corpus: every finalized post becomes a gold voice example,
@@ -90,6 +97,9 @@ def init_db(db_path: str) -> None:
     with get_connection(db_path) as conn:
         conn.executescript(SCHEMA)
         _ensure_column(conn, "drafts", "image_text", "TEXT")
+        # Performance-feedback columns on pre-existing post_log tables.
+        for col in ("impressions", "reactions", "comments", "reposts", "metrics_updated_at"):
+            _ensure_column(conn, "post_log", col, "INTEGER")
 
 
 @contextmanager

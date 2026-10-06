@@ -46,6 +46,7 @@ def build_system_prompt(
     *,
     published_posts: list[str] | None = None,
     edit_pairs: list | None = None,
+    top_posts: list[str] | None = None,
 ) -> str:
     parts = [
         "You are a ghostwriter drafting LinkedIn posts. You write AS the author "
@@ -84,6 +85,13 @@ def build_system_prompt(
                   "weight these most)"]
         for i, post in enumerate(published_posts, 1):
             parts.append(f"--- published {i} ---\n{_truncate(post)}")
+
+    # Learned signal: which posts actually earned engagement. Reuse what landed.
+    if top_posts:
+        parts += ["", "## The author's BEST-PERFORMING posts (these earned the most "
+                  "engagement — reuse what worked: hook style, structure, topic choices)"]
+        for i, post in enumerate(top_posts, 1):
+            parts.append(f"--- top {i} ---\n{_truncate(post)}")
 
     # Learned signal: how the author revises AI drafts. Learn the corrections.
     if edit_pairs:

@@ -7,7 +7,7 @@ from html.parser import HTMLParser
 
 import httpx
 
-from linkedin_agent import feedback
+from linkedin_agent import feedback, store
 from linkedin_agent.config import Settings, get_settings
 from linkedin_agent.draft import prompts
 from linkedin_agent.draft.llm import LLMProvider, get_provider
@@ -19,12 +19,13 @@ DEFAULT_ANGLES = [AngleType.CONTRARIAN, AngleType.PRACTICAL, AngleType.MISSED]
 
 
 def _build_system(settings: Settings) -> str:
-    """System prompt = persona + seed samples + learned voice (published posts
-    and edit corrections accumulated from past approvals)."""
+    """System prompt = persona + seed samples + learned voice (published posts,
+    top performers, and edit corrections accumulated from past approvals)."""
     return prompts.build_system_prompt(
         settings.persona,
         load_voice_samples(settings.voice_samples_dir),
         published_posts=feedback.recent_finals(settings),
+        top_posts=store.top_performing_posts(settings),
         edit_pairs=feedback.recent_edits(settings),
     )
 

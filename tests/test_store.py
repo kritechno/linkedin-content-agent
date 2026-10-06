@@ -8,6 +8,7 @@ from linkedin_agent import store
 from linkedin_agent.db import connect
 from linkedin_agent.draft.llm import MockProvider
 from linkedin_agent.draft import writer
+from linkedin_agent.research.models import Story
 
 
 def _make_draftset(story, settings):
@@ -74,3 +75,68 @@ def test_record_post_and_weekly_count(settings, story):
     assert rec.status == "posted"
     assert rec.post_urn == "urn:li:share:1"
     assert store.posts_in_last_days(settings, 7) == 1
+
+
+# ── performance feedback loop ───────────────────────────────────────────────
+def _publish(settings, object_id, text):
+    s = Story(object_id=object_id, title=f"t-{object_id}", url="https://e.com",
+              points=1, num_comments=1, author="a", created_at_i=int(time.time()))
+    ds = _make_draftset(s, settings)
+    did = store.create_draft(settings, s, ds)
+    store.record_post(settings, did, f"urn:{object_id}", text)
+    return did
+
+
+def test_record_metrics_and_engagement_score(settings, story):
+    ds = _make_draftset(story, settings)
+    did = store.create_draft(settings, story, ds)
+    store.record_post(settings, did, "urn:x", "hello")
+
+    [p] = store.list_recent_posts(settings)
+    assert p.has_metrics is False and p.draft_id == did
+
+    assert store.record_metrics(
+        settings, did, impressions=500, reactions=20, comments=3, reposts=1
+    ) is True
+    [p] = store.list_recent_posts(settings)
+    assert p.has_metrics is True
+    assert p.impressions == 500
+    assert p.engagement_score == 20 + 2 * 3 + 3 * 1  # reactions + 2*comments + 3*reposts
+
+
+def test_record_metrics_unknown_draft_returns_false(settings):
+    assert store.record_metrics(settings, 9999, reactions=5) is False
+
+
+def test_top_performing_orders_by_engagement(settings):
+    low = _publish(settings, "201", "low post")
+    mid = _publish(settings, "202", "mid post")
+    high = _publish(settings, "203", "high post")
+    store.record_metrics(settings, low, reactions=10)                 # score 10
+    store.record_metrics(settings, mid, reactions=5, comments=10)     # score 25
+    store.record_metrics(settings, high, reactions=1, reposts=10)     # score 31
+
+    top = store.top_performing_posts(settings, limit=2)
+    assert top == ["high post", "mid post"]  # best first, low cut by limit
+
+
+def test_top_performing_excludes_unmeasured_posts(settings):
+    _publish(settings, "301", "no metrics post")
+    measured = _publish(settings, "302", "measured post")
+    store.record_metrics(settings, measured, reactions=4)
+    assert store.top_performing_posts(settings) == ["measured post"]
+
+
+def test_posts_needing_metrics_age_window(settings):
+    did = _publish(settings, "401", "needs metrics")
+    # Freshly posted → too new for the [3,6]-day nudge window.
+    assert store.posts_needing_metrics(settings) == []
+
+    with connect(settings.db_path) as conn:
+        conn.execute("UPDATE post_log SET posted_at = ? WHERE draft_id = ?",
+                     (int(time.time()) - 4 * 86400, did))
+    pending = store.posts_needing_metrics(settings)
+    assert len(pending) == 1 and pending[0].draft_id == did
+
+    store.record_metrics(settings, did, reactions=1)  # once recorded, drops out
+    assert store.posts_needing_metrics(settings) == []

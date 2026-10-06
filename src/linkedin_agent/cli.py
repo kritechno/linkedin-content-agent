@@ -224,6 +224,45 @@ def cmd_learned(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_posts(args: argparse.Namespace) -> int:
+    from linkedin_agent import store
+
+    settings = get_settings()
+    posts = store.list_recent_posts(settings, limit=args.show)
+    if not posts:
+        print("No posts published yet.")
+        return 0
+    print(f"\n📋 {len(posts)} recent post(s)\n" + "=" * 72)
+    for p in posts:
+        when = datetime.fromtimestamp(p.posted_at, tz=timezone.utc).strftime("%Y-%m-%d")
+        head = (p.text or "").splitlines()[0] if p.text else ""
+        print(f"\n#{p.draft_id}  ({when})  {head[:60]}")
+        if p.has_metrics:
+            print(f"   {p.impressions or 0} impressions · {p.reactions or 0} reactions · "
+                  f"{p.comments or 0} comments · {p.reposts or 0} reposts "
+                  f"(engagement score {p.engagement_score})")
+        else:
+            print("   no metrics yet — record with `linkedin-agent perf`")
+    print("\n" + "=" * 72)
+    return 0
+
+
+def cmd_perf(args: argparse.Namespace) -> int:
+    from linkedin_agent import store
+
+    settings = get_settings()
+    ok = store.record_metrics(
+        settings, args.id,
+        impressions=args.impressions, reactions=args.reactions,
+        comments=args.comments, reposts=args.reposts,
+    )
+    if not ok:
+        print(f"No published post found for draft #{args.id}. Run `linkedin-agent posts`.")
+        return 1
+    print(f"✅ Recorded performance for post #{args.id}. It now feeds back into future drafts.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="linkedin-agent", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -275,6 +314,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_learned = sub.add_parser("learned", help="Show the learned voice corpus (posts + edits)")
     p_learned.add_argument("--show", type=int, default=3, help="how many recent posts to print")
     p_learned.set_defaults(func=cmd_learned)
+
+    p_posts = sub.add_parser("posts", help="List recent published posts + their performance")
+    p_posts.add_argument("--show", type=int, default=10, help="how many posts to list")
+    p_posts.set_defaults(func=cmd_posts)
+
+    p_perf = sub.add_parser("perf", help="Record how a published post performed (feedback loop)")
+    p_perf.add_argument("id", type=int, help="draft id of the post (see `posts`)")
+    p_perf.add_argument("--impressions", type=int, default=None)
+    p_perf.add_argument("--reactions", type=int, default=None)
+    p_perf.add_argument("--comments", type=int, default=None)
+    p_perf.add_argument("--reposts", type=int, default=None)
+    p_perf.set_defaults(func=cmd_perf)
 
     return parser
 

@@ -71,6 +71,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "LinkedIn content agent is live.\n"
         "/run – research + draft now\n"
+        "/posts – recent posts + their performance\n"
+        "/perf – record how a post performed (feeds back into drafts)\n"
         "/status – token + weekly post count"
     )
 
@@ -94,6 +96,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     token = tokens.load_token(settings)
     posted = store.posts_in_last_days(settings, 7)
     learned = feedback.stats(settings)
+    recent = store.list_recent_posts(settings, limit=20)
+    with_metrics = sum(1 for p in recent if p.has_metrics)
     lines = [f"Posts in last 7 days: {posted}/{settings.max_posts_per_week}"]
     if token:
         lines.append(f"LinkedIn token: {token.access_seconds_left // 3600}h of access left")
@@ -103,7 +107,94 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"Voice corpus: {learned['total']} learned post(s), {learned['edited']} edited "
         "— drafts adapt to your voice as this grows."
     )
+    if recent:
+        lines.append(
+            f"Performance: recorded on {with_metrics}/{len(recent)} recent posts "
+            "— winners steer future drafts (/perf to add more)."
+        )
     await update.message.reply_text("\n".join(lines))
+
+
+def _snippet(text: str, n: int = 80) -> str:
+    one = " ".join((text or "").split())
+    return one if len(one) <= n else one[:n].rstrip() + "…"
+
+
+def _parse_metrics(parts: list[str]) -> dict | None:
+    """Parse 'impressions reactions comments [reposts]' into record_metrics kwargs."""
+    try:
+        nums = [int(p.replace(",", "")) for p in parts]
+    except ValueError:
+        return None
+    if len(nums) == 3:
+        nums.append(0)  # reposts optional
+    if len(nums) != 4:
+        return None
+    impressions, reactions, comments, reposts = nums
+    return {
+        "impressions": impressions, "reactions": reactions,
+        "comments": comments, "reposts": reposts,
+    }
+
+
+async def cmd_posts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    posts = store.list_recent_posts(settings, limit=10)
+    if not posts:
+        await update.message.reply_text("No posts published yet.")
+        return
+    lines = ["📋 Recent posts (newest first):"]
+    for p in posts:
+        when = dt.datetime.fromtimestamp(p.posted_at).strftime("%b %d")
+        if p.has_metrics:
+            perf = (f"{p.impressions or 0} impr · {p.reactions or 0} rx · "
+                    f"{p.comments or 0} cm · {p.reposts or 0} rp (score {p.engagement_score})")
+        else:
+            perf = "no metrics yet"
+        lines.append(f"\n#{p.draft_id} · {when}\n  {_snippet(p.text)}\n  {perf}")
+    lines.append("\nRecord performance with  /perf  (or  /perf <#> <impr> <rx> <cm> [rp]).")
+    await update.message.reply_text("\n".join(lines), disable_web_page_preview=True)
+
+
+async def cmd_perf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    args = context.args or []
+    usage = "Usage: /perf <post#> <impressions> <reactions> <comments> [reposts]\n" \
+            "or just /perf to be walked through the latest post."
+
+    if args:  # direct one-liner
+        try:
+            draft_id = int(args[0])
+        except ValueError:
+            await update.message.reply_text(usage)
+            return
+        metrics = _parse_metrics(args[1:])
+        if metrics is None:
+            await update.message.reply_text(usage)
+            return
+        ok = store.record_metrics(settings, draft_id, **metrics)
+        await update.message.reply_text(
+            f"📊 Saved performance for post #{draft_id}. It now steers future drafts."
+            if ok else f"No published post found for #{draft_id}. Use /posts to see ids."
+        )
+        return
+
+    # guided: pick the most recent post that still lacks metrics
+    pending = [
+        p for p in store.list_recent_posts(settings, limit=20)
+        if not p.has_metrics and p.draft_id is not None
+    ]
+    if not pending:
+        await update.message.reply_text("All recent posts already have performance recorded. 🎉")
+        return
+    target = pending[0]
+    context.user_data.pop("awaiting_edit", None)
+    context.user_data.pop("awaiting_image_text", None)
+    context.user_data["awaiting_metrics"] = target.draft_id
+    await update.message.reply_text(
+        f"📊 Post #{target.draft_id}:\n\n{_snippet(target.text, 140)}\n\n"
+        "Reply with four numbers — impressions reactions comments reposts — e.g. 1200 34 8 2"
+    )
 
 
 # ── callback buttons ──────────────────────────────────────────────────────
@@ -179,6 +270,22 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def on_edit_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    metrics_draft_id = context.user_data.pop("awaiting_metrics", None)
+    if metrics_draft_id is not None:
+        settings = _settings(context)
+        parsed = _parse_metrics(update.message.text.split())
+        if parsed is None:
+            context.user_data["awaiting_metrics"] = metrics_draft_id  # stay in the flow
+            await update.message.reply_text(
+                "Need 3-4 numbers: impressions reactions comments [reposts]. e.g. 1200 34 8 2"
+            )
+            return
+        store.record_metrics(settings, metrics_draft_id, **parsed)
+        await update.message.reply_text(
+            f"📊 Saved for post #{metrics_draft_id}. Top performers now steer future drafts."
+        )
+        return
+
     image_draft_id = context.user_data.pop("awaiting_image_text", None)
     if image_draft_id is not None:
         settings = _settings(context)
@@ -219,6 +326,21 @@ async def scheduled_cycle(context: ContextTypes.DEFAULT_TYPE) -> None:
         await send_draft_for_review(context.application, settings, draft_id)
 
 
+async def metrics_nudge(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Once a post has had a few days to accumulate engagement, ask the owner to
+    record its numbers — that's what closes the performance feedback loop."""
+    settings = context.application.bot_data["settings"]
+    pending = store.posts_needing_metrics(settings)
+    if not pending:
+        return
+    ids = ", ".join(f"#{p.draft_id}" for p in pending)
+    await context.bot.send_message(
+        int(settings.telegram_chat_id),
+        f"📊 How did {ids} do? Send /perf to record impressions/reactions — "
+        "it teaches the writer what actually lands.",
+    )
+
+
 async def token_expiry_check(context: ContextTypes.DEFAULT_TYPE) -> None:
     settings = context.application.bot_data["settings"]
     token = tokens.load_token(settings)
@@ -246,6 +368,8 @@ def build_application(settings: Settings | None = None) -> Application:
     app.add_handler(CommandHandler("start", cmd_start, filters=only_owner))
     app.add_handler(CommandHandler("run", cmd_run, filters=only_owner))
     app.add_handler(CommandHandler("status", cmd_status, filters=only_owner))
+    app.add_handler(CommandHandler("posts", cmd_posts, filters=only_owner))
+    app.add_handler(CommandHandler("perf", cmd_perf, filters=only_owner))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(only_owner & filters.TEXT & ~filters.COMMAND, on_edit_reply))
 
@@ -260,6 +384,9 @@ def build_application(settings: Settings | None = None) -> Application:
         )
         app.job_queue.run_daily(
             token_expiry_check, time=dt.time(hour=9, minute=0), name="token-check"
+        )
+        app.job_queue.run_daily(
+            metrics_nudge, time=dt.time(hour=10, minute=0), name="metrics-nudge"
         )
     return app
 

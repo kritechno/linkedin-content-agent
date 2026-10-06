@@ -31,6 +31,8 @@ Run via `uv run linkedin-agent <command>` (or `python -m linkedin_agent`).
 | `bot` | 3,4,6 | Run the Telegram review bot (+ schedule) |
 | `card "<text>"` | 5 | Render a text-card image (test) |
 | `post-draft <id> [--yes]` | 4 | Publish a queued draft to LinkedIn |
+| `posts [--show N]` | — | List recent published posts + their recorded performance |
+| `perf <id> --reactions … --comments …` | — | Record how a post performed (feeds the writer) |
 | `learned [--show N]` | — | Inspect the learned voice corpus (published posts + edits) |
 | `auth` / `token-status` / `post-hello` | 0 | LinkedIn OAuth / token info / hello-world post |
 
@@ -69,6 +71,19 @@ table): recent published posts are weighted most heavily, and recent edits are
 shown as "here's what this author changes, pre-apply it." So the more you
 approve and edit, the more drafts sound like you. Inspect the corpus anytime
 with `linkedin-agent learned`; the bot's `/status` shows the running count.
+
+### It learns what actually performs
+
+Sounding like you isn't the same as landing with your audience, so the agent
+also closes a **performance feedback loop**. A few days after a post goes live,
+the bot nudges you to record its numbers (impressions / reactions / comments /
+reposts) — tap **/perf** in Telegram (guided), or `/perf <#> <impr> <rx> <cm>
+<rp>` in one line; `linkedin-agent perf` does the same from the terminal.
+**/posts** lists recent posts with their scores. Your **highest-engagement**
+posts are then fed back into the draft prompt as "reuse what worked here," so
+the writer drifts toward the hooks, structure, and topics your network actually
+engages with — not just your voice. Engagement is scored
+`reactions + 2·comments + 3·reposts` (a repost is the strongest endorsement).
 
 ## Going live
 

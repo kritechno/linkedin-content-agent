@@ -44,3 +44,13 @@ def test_require_linkedin_and_telegram():
 def test_post_days_default():
     s = Settings()
     assert s.post_days == ["mon", "wed", "fri"]
+
+
+def test_default_provider_is_openai(monkeypatch):
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    assert Settings().llm_provider == "openai"
+
+
+def test_default_reasoning_effort(monkeypatch):
+    monkeypatch.delenv("OPENAI_REASONING_EFFORT", raising=False)
+    assert Settings().openai_reasoning_effort == "low"

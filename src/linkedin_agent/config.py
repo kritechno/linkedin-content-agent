@@ -15,8 +15,12 @@ from dotenv import load_dotenv
 load_dotenv()  # read .env if present; real env vars win
 
 # Default research queries (plan §2). Each is a separate HN Algolia query; we
-# merge + dedupe the results.
+# merge + dedupe the results. We can't read LinkedIn's own feed, so instead we
+# pull the HN topics that travel *on* LinkedIn: AI, plus engineering practice
+# and career/work themes (layoffs, hiring, remote work, management) that a
+# LinkedIn audience reliably engages with.
 DEFAULT_QUERIES = [
+    # AI
     "LLM",
     "AI agent",
     "vibe coding",
@@ -26,6 +30,17 @@ DEFAULT_QUERIES = [
     "AI startup",
     "AI founder",
     "AI productivity",
+    # Engineering practice
+    "software engineering",
+    "developer productivity",
+    "code review",
+    "system design",
+    # Career / work — the human-interest topics that go viral on LinkedIn
+    "tech layoffs",
+    "developer career",
+    "engineering management",
+    "remote work",
+    "tech hiring",
 ]
 
 # Focus keywords for the ranker's topic_match signal AND the relevance gate.
@@ -43,6 +58,12 @@ DEFAULT_FOCUS_KEYWORDS = [
     "software engineer", "developer", "founder", "entrepreneur", "startup",
     "indie hacker", "builder", "productivity", "workflow", "shipping",
     "production", "code review", "career", "hiring",
+    # Engineering practice + career/work themes that resonate on LinkedIn.
+    "system design", "architecture", "tech debt", "technical debt", "refactor",
+    "engineering manager", "leadership", "mentor", "onboarding", "remote work",
+    "return to office", "layoff", "laid off", "interview", "resume",
+    "job market", "job search", "promotion", "salary", "compensation",
+    "burnout", "work-life", "self-taught", "bootcamp", "junior engineer",
 ]
 
 # STRICT keywords matched on WORD BOUNDARIES (\bkw\b), so short/ambiguous tokens
@@ -105,10 +126,16 @@ class Settings:
     # ── Draft writer (Phase 2) ────────────────────────────────────────────
     # provider: "openai" or "anthropic". llm_model is optional; each provider
     # falls back to a sensible default when it's blank.
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic").lower())
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai").lower())
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", ""))
+    # Reasoning effort for OpenAI GPT-5-class models (none|low|medium|high|xhigh).
+    # "low" keeps drafts fast and natural — heavy reasoning isn't needed to write
+    # a short voiced post, and it keeps the token budget for the post itself.
+    openai_reasoning_effort: str = field(
+        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "low")
+    )
     persona: str = field(default_factory=lambda: os.getenv("PERSONA", DEFAULT_PERSONA))
     voice_samples_dir: str = field(default_factory=lambda: os.getenv("VOICE_SAMPLES_DIR", "voice_examples"))
     n_angles: int = field(default_factory=lambda: int(os.getenv("N_ANGLES", "3")))

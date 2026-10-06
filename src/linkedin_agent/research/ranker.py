@@ -78,7 +78,15 @@ EVERGREEN_PRACTICE_RE = re.compile(
     r"shipping|production|workflow|productivity|hiring|jobs?|careers?|"
     r"business|customers?|operations|sales|marketing|bootstrapp(?:ed|ing)?|"
     r"pricing|costs?|trust|evals?|evaluation|benchmarks?|technical debt|"
-    r"architecture|maintenance|security|privacy)\b",
+    r"architecture|maintenance|security|privacy|"
+    # LinkedIn-native career/work themes — the human-interest topics that
+    # reliably travel on LinkedIn even when they aren't AI news.
+    r"layoffs?|laid off|fired|return to office|rto|remote work|"
+    r"work[- ]?life|burnout|overwork|salary|salaries|compensation|"
+    r"promotion|promoted|interview(?:s|ing)?|resume|recruit(?:er|ing|ment)?|"
+    r"job (?:market|search|hunt)|mentor(?:ship|ing)?|leadership|management|"
+    r"managers?|onboarding|self[- ]?taught|bootcamp|imposter syndrome|"
+    r"upskill(?:ing)?|freelanc(?:e|ing)|consulting|solopreneur)\b",
     re.IGNORECASE,
 )
 EVERGREEN_FRAME_RE = re.compile(
@@ -97,12 +105,12 @@ def _word_pattern(keyword: str) -> re.Pattern[str]:
 
 @dataclass(frozen=True)
 class Weights:
-    points: float = 0.28        # widely upvoted = widely seen
-    comments: float = 0.22      # widely discussed
+    points: float = 0.26        # widely upvoted = widely seen
+    comments: float = 0.20      # widely discussed
     controversy: float = 0.15   # actively argued (volume-gated)
     topic: float = 0.12         # in my niche
-    source: float = 0.09        # primary-source launch/news signals
-    evergreen: float = 0.09     # recurring AI/engineering/founder debates
+    source: float = 0.08        # primary-source launch/news signals
+    evergreen: float = 0.14     # AI/engineering/career debates that go viral on LinkedIn
     recency: float = 0.05       # freshness, just a tiebreaker
 
     def total(self) -> float:

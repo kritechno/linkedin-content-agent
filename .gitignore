@@ -28,3 +28,7 @@ api_key/
 
 # Generated post images
 generated_images/
+
+# Personal notes, not part of the project
+linkedin-profile-optimization.md
+.claude/
