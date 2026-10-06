@@ -1,12 +1,12 @@
-# LinkedIn AI-Content Agent
+# LinkedIn Content Agent
 
-Researches hot/controversial AI topics, drafts opinionated LinkedIn posts in
-Amir's voice, gates each one through a Telegram approval step, and posts to
-LinkedIn on approval — on a schedule, with a human always in the loop. Full
-design in [`linkedin-agent-architecture.md`](linkedin-agent-architecture.md).
+[![CI](https://github.com/kritechno/linkedin-content-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/kritechno/linkedin-content-agent/actions/workflows/ci.yml)
 
-**Status: all phases (0–6) built and tested.** Live pieces need three secrets:
-LinkedIn OAuth (done ✅), an LLM key (OpenAI ✅), and a Telegram bot (you add).
+An LLM agent that researches current AI topics, drafts LinkedIn posts in the author's own voice, fact-checks them against the source, and publishes only after a human approves each one in Telegram. It runs on a schedule and learns from every post that is approved or edited, and from how published posts perform.
+
+I built it for my own LinkedIn account. The design notes are in [`linkedin-agent-architecture.md`](linkedin-agent-architecture.md).
+
+To run it you need three credentials of your own: a LinkedIn app for OAuth, an OpenAI or Anthropic API key, and a Telegram bot token.
 
 ```
 research → draft (voice + 3 angles + fact-check) → Telegram review
@@ -18,7 +18,7 @@ research → draft (voice + 3 angles + fact-check) → Telegram review
 ```bash
 uv sync --extra dev          # venv + deps
 cp .env.example .env         # fill in secrets (see below)
-uv run pytest                # 46 tests, offline
+uv run pytest                # 66 tests, offline
 ```
 
 Run via `uv run linkedin-agent <command>` (or `python -m linkedin_agent`).
@@ -44,7 +44,7 @@ Run via `uv run linkedin-agent <command>` (or `python -m linkedin_agent`).
   refresh token is granted you'll re-run `auth` (the bot warns you ~7 days out).
   Bump `LINKEDIN_API_VERSION` (YYYYMM) if a post returns a version error.
 - **LLM (Phase 2):** `LLM_PROVIDER=openai` + `OPENAI_API_KEY` (default model
-  `gpt-4o`), or `anthropic` + `ANTHROPIC_API_KEY`. Override with `LLM_MODEL`.
+  `gpt-5.5`), or `anthropic` + `ANTHROPIC_API_KEY`. Override with `LLM_MODEL`.
 - **Telegram (Phase 3):** create a bot with [@BotFather](https://t.me/BotFather)
   → `TELEGRAM_BOT_TOKEN`; get your numeric id from
   [@userinfobot](https://t.me/userinfobot) → `TELEGRAM_CHAT_ID` (only this chat
